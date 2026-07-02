@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>交易复盘日志</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f0; color: #1a1a1a; min-height: 100vh; }
+
+  .header { background: #fff; border-bottom: 1px solid #e8e8e4; padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 10; }
+  .header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .user-badge { font-size: 12px; color: #888; background: #f5f5f0; padding: 4px 10px; border-radius: 999px; }
+
+  .container { max-width: 1000px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+  .stat-card { background: #fff; border-radius: 10px; padding: 1rem 1.25rem; border: 1px solid #e8e8e4; }
+  .stat-label { font-size: 11px; color: #999; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+  .pos { color: #16a34a; }
+  .neg { color: #dc2626; }
+  .neutral { color: #1a1a1a; }
+
+  .tabs { display: flex; gap: 2px; background: #e8e8e4; border-radius: 8px; padding: 3px; margin-bottom: 1.5rem; width: fit-content; }
+  .tab { padding: 6px 16px; font-size: 13px; border-radius: 6px; cursor: pointer; border: none; background: none; color: #666; font-family: inherit; transition: all 0.15s; }
+  .tab.active { background: #fff; color: #1a1a1a; font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+  .card { background: #fff; border-radius: 12px; border: 1px solid #e8e8e4; padding: 1.5rem; margin-bottom: 1rem; }
+  .card-title { font-size: 13px; font-weight: 500; color: #666; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 6px; }
+
+  .form-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .form-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 12px; color: #888; margin-bottom: 5px; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #e0e0da; border-radius: 7px;
+    font-size: 13px; font-family: inherit; background: #fff; color: #1a1a1a;
+    transition: border 0.15s; outline: none;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #aaa; }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+
+  .emotion-wrap { margin-bottom: 12px; }
+  .emotion-wrap label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; }
+  .emotion-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .emotion-tag { padding: 5px 12px; border-radius: 999px; font-size: 12px; border: 1px solid #e0e0da; background: #fff; cursor: pointer; color: #555; transition: all 0.15s; }
+  .emotion-tag.selected { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+  .btn-row { display: flex; gap: 8px; }
+  .btn { padding: 8px 18px; border-radius: 7px; font-size: 13px; font-family: inherit; cursor: pointer; transition: all 0.15s; border: none; }
+  .btn-dark { background: #1a1a1a; color: #fff; }
+  .btn-dark:hover { background: #333; }
+  .btn-outline { background: #fff; color: #555; border: 1px solid #e0e0da; }
+  .btn-outline:hover { background: #f5f5f0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { font-size: 11px; font-weight: 500; color: #999; text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f0ec; }
+  td { padding: 10px 10px; border-bottom: 1px solid #f5f5f0; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; }
+  .b-long { background: #dcfce7; color: #15803d; }
+  .b-short { background: #fee2e2; color: #b91c1c; }
+  .b-win { background: #dcfce7; color: #15803d; }
+  .b-loss { background: #fee2e2; color: #b91c1c; }
+  .b-open { background: #fef3c7; color: #b45309; }
+
+  .del-btn { background: none; border: none; cursor: pointer; color: #ccc; font-size: 16px; padding: 3px 6px; border-radius: 4px; transition: all 0.15s; }
+  .del-btn:hover { color: #dc2626; background: #fee2e2; }
+
+  .insight { border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; font-size: 13px; line-height: 1.6; }
+  .insight-info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .insight-warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+  .insight-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .insight-ok { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+
+  .empty { text-align: center; color: #bbb; font-size: 13px; padding: 3rem; }
+
+  .note-row td { font-size: 12px; color: #999; padding: 2px 10px 10px; }
+
+  #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f5f5f0; }
+  .login-card { background: #fff; border-radius: 14px; border: 1px solid #e8e8e4; padding: 2.5rem 2rem; width: 340px; text-align: center; }
+  .login-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .login-card p { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .login-input { width: 100%; padding: 10px 12px; border: 1px solid #e0e0da; border-radius: 8px; font-size: 14px; font-family: inherit; margin-bottom: 10px; outline: none; }
+  .login-input:focus { border-color: #aaa; }
+  .login-btn { width: 100%; padding: 10px; background: #1a1a1a; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-family: inherit; cursor: pointer; margin-bottom: 8px; }
+  .login-btn:hover { background: #333; }
+  .login-msg { font-size: 12px; color: #888; margin-top: 8px; min-height: 20px; }
+
+  @media (max-width: 640px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .form-grid-3 { grid-template-columns: 1fr 1fr; }
+    .container { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 登录界面 -->
+<div id="login-screen">
+  <div class="login-card">
+    <h2>交易复盘日志</h2>
+    <p>登录后数据云端同步，任意设备可用</p>
+    <input class="login-input" type="email" id="login-email" placeholder="邮箱地址">
+    <input class="login-input" type="password" id="login-pwd" placeholder="密码">
+    <button class="login-btn" onclick="signIn()">登录</button>
+    <button class="login-btn" style="background:#fff;color:#1a1a1a;border:1px solid #e0e0da" onclick="signUp()">注册新账号</button>
+    <div class="login-msg" id="login-msg"></div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="main-screen" style="display:none">
+  <div class="header">
+    <h1>交易复盘日志</h1>
+    <div class="header-right">
+      <span class="user-badge" id="user-email-display"></span>
+      <button class="btn btn-outline" onclick="signOut()" style="padding:5px 12px;font-size:12px">退出</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">总交易次数</div><div class="stat-value neutral" id="s-total">0</div></div>
+      <div class="stat-card"><div class="stat-label">胜率</div><div class="stat-value neutral" id="s-wr">—</div></div>
+      <div class="stat-card"><div class="stat-label">总盈亏 (USDT)</div><div class="stat-value neutral" id="s-pnl">0</div></div>
+      <div class="stat-card"><div class="stat-label">盈亏比</div><div class="stat-value neutral" id="s-rr">—</div></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('record')">记录交易</button>
+      <button class="tab" onclick="showTab('history')">历史记录</button>
+      <button class="tab" onclick="showTab('review')">复盘分析</button>
+    </div>
+
+    <!-- 记录交易 -->
+    <div id="tab-record">
+      <div class="card">
+        <div class="card-title">新增交易记录</div>
+        <div class="form-grid-3">
+          <div class="form-group"><label>交易对</label><input type="text" id="f-pair" placeholder="BTC/USDT"></div>
+          <div class="form-group"><label>方向</label>
+            <select id="f-dir"><option value="long">做多 Long</option><option value="short">做空 Short</option></select>
+          </div>
+          <div class="form-group"><label>杠杆倍数</label><input type="number" id="f-lev" placeholder="10" min="1"></div>
+        </div>
+        <div class="form-grid-3">
+          <div class="form-group"><label>开仓价格</label><input type="number" id="f-entry" placeholder="0.00" step="any"></div>
+          <div class="form-group"><label>平仓价格（可选）</label><input type="number" id="f-exit" placeholder="0.00" step="any"></div>
+          <div class="form-group"><label>本金 (USDT)</label><input type="number" id="f-size" placeholder="100" step="any"></div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group"><label>止损价</label><input type="number" id="f-sl" placeholder="可选" step="any"></div>
+          <div class="form-group"><label>止盈价</label><input type="number" id="f-tp" placeholder="可选" step="any"></div>
+        </div>
+        <div class="emotion-wrap">
+          <label>开仓时情绪状态</label>
+          <div class="emotion-tags">
+            <span class="emotion-tag" onclick="toggleEmotion(this,'冷静')">冷静</span>
+            <span class="emotion-tag" onclick="toggleEmotion(this,'兴奋')">兴奋</span>
+            <span class="emotion-tag" onclick="toggleEmotion(this,'焦虑')">焦虑</span>
+            <span class="emotion-tag" onclick="toggleEmotion(this,'FOMO')">FOMO</span>
+            <span class="emotion-tag" onclick="toggleEmotion(this,'报复性')">报复性</span>
+            <span class="emotion-tag" onclick="toggleEmotion(this,'不确定')">不确定</span>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px">
+          <label>开仓理由 / 复盘笔记</label>
+          <textarea id="f-note" placeholder="为什么开这笔？有没有按计划执行？事后如何看待..."></textarea>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-dark" onclick="addTrade()">保存记录</button>
+          <button class="btn btn-outline" onclick="clearForm()">清空</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 历史记录 -->
+    <div id="tab-history" style="display:none">
+      <div class="card">
+        <div class="card-title">所有交易记录</div>
+        <div id="trade-table-wrap"><div class="empty">暂无记录</div></div>
+      </div>
+    </div>
+
+    <!-- 复盘分析 -->
+    <div id="tab-review" style="display:none">
+      <div class="card">
+        <div class="card-title">复盘洞察</div>
+        <div id="insights"><div class="empty">至少需要 2 笔已平仓记录才能生成分析</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">情绪与胜率关系</div>
+        <div id="emotion-stats"><div class="empty">添加含情绪标注的记录后显示</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://dwlzupvhhildxouvfkmj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_q8e-4_zPFmNDiri8B-3ilg_fhzmW5yZ';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let trades = [];
+let selectedEmotion = '';
+let currentUser = null;
+
+async function signIn() {
+  const email = document.getElementById('login-email').value.trim();
+  const pwd = document.getElementById('login-pwd').value;
+  setMsg('登录中...');
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pwd });
+  if (error) { setMsg(error.message); return; }
+  onLogin(data.user);
+}
+
+async function signUp() {
+  const email = document.getElementById('login-email').value.trim();
+  const pwd = document.getElementById('login-pwd').value;
+  if (pwd.length < 6) { setMsg('密码至少 6 位'); return; }
+  setMsg('注册中...');
+  const { data, error } = await sb.auth.signUp({ email, password: pwd });
+  if (error) { setMsg(error.message); return; }
+  setMsg('注册成功！请查收验证邮件后登录');
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  document.getElementById('main-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  trades = [];
+}
+
+function setMsg(m) { document.getElementById('login-msg').textContent = m; }
+
+async function onLogin(user) {
+  currentUser = user;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = '';
+  document.getElementById('user-email-display').textContent = user.email;
+  await loadTrades();
+}
+
+async function loadTrades() {
+  const { data, error } = await sb.from('trades').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+  if (error) { console.error(error); return; }
+  trades = data || [];
+  updateStats();
+}
+
+async function addTrade() {
+  const pair = document.getElementById('f-pair').value.trim();
+  const entry = parseFloat(document.getElementById('f-entry').value);
+  const size = parseFloat(document.getElementById('f-size').value);
+  const lev = parseFloat(document.getElementById('f-lev').value) || 1;
+  if (!pair || !entry || !size) { alert('请至少填写交易对、开仓价格和本金'); return; }
+  const exit_price = parseFloat(document.getElementById('f-exit').value) || null;
+  const trade = {
+    user_id: currentUser.id,
+    pair, direction: document.getElementById('f-dir').value,
+    leverage: lev, entry_price: entry, exit_price,
+    size,
+    stop_loss: parseFloat(document.getElementById('f-sl').value) || null,
+    take_profit: parseFloat(document.getElementById('f-tp').value) || null,
+    emotion: selectedEmotion || null,
+    note: document.getElementById('f-note').value.trim() || null
+  };
+  const { data, error } = await sb.from('trades').insert([trade]).select();
+  if (error) { alert('保存失败: ' + error.message); return; }
+  trades.unshift(data[0]);
+  updateStats();
+  clearForm();
+  alert('记录已保存！');
+}
+
+async function deleteTrade(id) {
+  if (!confirm('确认删除这条记录？')) return;
+  const { error } = await sb.from('trades').delete().eq('id', id);
+  if (error) { alert('删除失败'); return; }
+  trades = trades.filter(t => t.id !== id);
+  updateStats();
+  renderTable();
+}
+
+function calcPnl(t) {
+  if (!t.entry_price || !t.exit_price || !t.size) return null;
+  const pct = t.direction === 'long'
+    ? (t.exit_price - t.entry_price) / t.entry_price
+    : (t.entry_price - t.exit_price) / t.entry_price;
+  return parseFloat((pct * t.leverage * t.size).toFixed(2));
+}
+
+function toggleEmotion(el, val) {
+  document.querySelectorAll('.emotion-tag').forEach(e => e.classList.remove('selected'));
+  if (selectedEmotion === val) { selectedEmotion = ''; return; }
+  el.classList.add('selected');
+  selectedEmotion = val;
+}
+
+function clearForm() {
+  ['f-pair','f-entry','f-exit','f-size','f-lev','f-sl','f-tp','f-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.querySelectorAll('.emotion-tag').forEach(e => e.classList.remove('selected'));
+  selectedEmotion = '';
+}
+
+function showTab(t) {
+  ['record','history','review'].forEach(id => {
+    document.getElementById('tab-'+id).style.display = id===t ? '' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el,i) => {
+    el.classList.toggle('active', ['record','history','review'][i]===t);
+  });
+  if (t==='history') renderTable();
+  if (t==='review') renderReview();
+}
+
+function updateStats() {
+  const closed = trades.filter(t => t.exit_price);
+  const wins = closed.filter(t => calcPnl(t) > 0);
+  const totalPnl = closed.reduce((s,t) => s+(calcPnl(t)||0), 0);
+  const avgWin = wins.length ? wins.reduce((s,t)=>s+(calcPnl(t)||0),0)/wins.length : 0;
+  const losses = closed.filter(t => (calcPnl(t)||0) <= 0);
+  const avgLoss = losses.length ? Math.abs(losses.reduce((s,t)=>s+(calcPnl(t)||0),0)/losses.length) : 0;
+  const rr = avgLoss > 0 ? (avgWin/avgLoss).toFixed(2) : '—';
+  const wr = closed.length ? Math.round(wins.length/closed.length*100)+'%' : '—';
+
+  document.getElementById('s-total').textContent = trades.length;
+  document.getElementById('s-wr').textContent = wr;
+  const pnlEl = document.getElementById('s-pnl');
+  pnlEl.textContent = (totalPnl>=0?'+':'')+totalPnl.toFixed(2);
+  pnlEl.className = 'stat-value '+(totalPnl>0?'pos':totalPnl<0?'neg':'neutral');
+  document.getElementById('s-rr').textContent = rr;
+}
+
+function renderTable() {
+  const wrap = document.getElementById('trade-table-wrap');
+  if (!trades.length) { wrap.innerHTML = '<div class="empty">暂无记录</div>'; return; }
+  let html = '<table><thead><tr><th>日期</th><th>交易对</th><th>方向</th><th>杠杆</th><th>盈亏</th><th>情绪</th><th>状态</th><th></th></tr></thead><tbody>';
+  trades.forEach(t => {
+    const pnl = t.exit_price ? calcPnl(t) : null;
+    const pnlStr = pnl!==null ? (pnl>=0?'+':'')+pnl.toFixed(2) : '—';
+    const pnlColor = pnl>0?'color:#16a34a':pnl<0?'color:#dc2626':'';
+    const status = t.exit_price
+      ? (pnl>0 ? '<span class="badge b-win">盈利</span>' : '<span class="badge b-loss">亏损</span>')
+      : '<span class="badge b-open">持仓中</span>';
+    const date = new Date(t.created_at).toLocaleDateString('zh-CN');
+    html += `<tr>
+      <td style="color:#bbb;font-size:12px">${date}</td>
+      <td style="font-weight:500">${t.pair}</td>
+      <td>${t.direction==='long'?'<span class="badge b-long">多</span>':'<span class="badge b-short">空</span>'}</td>
+      <td>${t.leverage}x</td>
+      <td style="${pnlColor};font-weight:500">${pnlStr}</td>
+      <td style="font-size:12px;color:#bbb">${t.emotion||'—'}</td>
+      <td>${status}</td>
+      <td><button class="del-btn" onclick="deleteTrade('${t.id}')">×</button></td>
+    </tr>`;
+    if (t.note) html += `<tr class="note-row"><td colspan="8">${t.note}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderReview() {
+  const closed = trades.filter(t => t.exit_price);
+  const insightsEl = document.getElementById('insights');
+  const emotionEl = document.getElementById('emotion-stats');
+  if (closed.length < 2) { insightsEl.innerHTML = '<div class="empty">至少需要 2 笔已平仓记录</div>'; emotionEl.innerHTML = '<div class="empty">数据不足</div>'; return; }
+
+  const wins = closed.filter(t => calcPnl(t) > 0);
+  const wr = wins.length / closed.length;
+  const totalPnl = closed.reduce((s,t)=>s+(calcPnl(t)||0),0);
+  const avgLev = trades.reduce((s,t)=>s+t.leverage,0)/trades.length;
+
+  let html = '';
+  if (avgLev > 20) html += `<div class="insight insight-danger">平均杠杆 ${avgLev.toFixed(0)}x 偏高，价格反向波动 ${(100/avgLev).toFixed(1)}% 即可爆仓，建议控制在 10x 以内</div>`;
+  if (wr < 0.4) html += `<div class="insight insight-warn">胜率仅 ${Math.round(wr*100)}%，低于 40%，建议复查入场逻辑</div>`;
+  if (totalPnl > 0 && wr >= 0.5) html += `<div class="insight insight-ok">整体盈利，胜率 ${Math.round(wr*100)}%，策略有效，保持纪律</div>`;
+
+  const withEmotion = closed.filter(t => t.emotion);
+  if (withEmotion.length >= 3) {
+    const byE = {};
+    withEmotion.forEach(t => {
+      if (!byE[t.emotion]) byE[t.emotion] = {total:0,wins:0};
+      byE[t.emotion].total++;
+      if (calcPnl(t) > 0) byE[t.emotion].wins++;
+    });
+    Object.entries(byE).forEach(([e, v]) => {
+      if (v.wins/v.total < 0.4 && v.total >= 2)
+        html += `<div class="insight insight-warn">情绪"${e}"时胜率偏低（${Math.round(v.wins/v.total*100)}%），建议这种状态下暂停交易</div>`;
+    });
+  }
+
+  if (!html) html = '<div class="insight insight-info">继续记录更多交易，分析会更精准</div>';
+  insightsEl.innerHTML = html;
+
+  const et = trades.filter(t => t.emotion && t.exit_price);
+  if (!et.length) { emotionEl.innerHTML = '<div class="empty">无情绪标注记录</div>'; return; }
+  const byE = {};
+  et.forEach(t => {
+    if (!byE[t.emotion]) byE[t.emotion] = {total:0,wins:0};
+    byE[t.emotion].total++;
+    if (calcPnl(t) > 0) byE[t.emotion].wins++;
+  });
+  let eHtml = '<table><thead><tr><th>情绪</th><th>次数</th><th>胜率</th></tr></thead><tbody>';
+  Object.entries(byE).forEach(([e,v]) => {
+    const w = Math.round(v.wins/v.total*100);
+    eHtml += `<tr><td>${e}</td><td>${v.total}</td><td style="color:${w>=50?'#16a34a':'#dc2626'};font-weight:500">${w}%</td></tr>`;
+  });
+  emotionEl.innerHTML = eHtml + '</tbody></table>';
+}
+
+// 自动检查登录状态
+sb.auth.getSession().then(({ data: { session } }) => {
+  if (session) onLogin(session.user);
+});
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session) onLogin(session.user);
+});
+</script>
+</body>
+</html>
